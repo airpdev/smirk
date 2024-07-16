@@ -64,40 +64,60 @@ if __name__ == '__main__':
         
     flame = FLAME().to(args.device)
     renderer = Renderer().to(args.device)
+    
+    image_size = 224
 
+    vertices_path = "results/vertices/"
+    if not os.path.exists(vertices_path):
+        os.makedirs(vertices_path)
+    
     jaw_path = "results/jaws/"
     if not os.path.exists(jaw_path):
         os.makedirs(jaw_path)
-    
-    image_size = 224
-    
-    model_images_path = "results/model_images/"
+        
+    model_images_path = "samples/model_images/"
     model_images_files = os.listdir(model_images_path)
     model_files = [f for f in model_images_files if os.path.isfile(os.path.join(model_images_path, f))]
     total_model_count = len(model_files)
     
-    video_fps = 25
-    out_width = image_size
-    out_height = image_size
+    cap = cv2.VideoCapture(args.input_path)
+
+    if not cap.isOpened():
+        print('Error opening video file')
+        exit()
+
+    video_fps = cap.get(cv2.CAP_PROP_FPS)
+    video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    # calculate size of output video
+    if args.render_orig:
+        out_width = video_width
+        out_height = video_height
+    else:
+        out_width = image_size
+        out_height = image_size
+        
     if args.use_smirk_generator:
-        out_width *= 3
+        out_width *= 2
     else:
         out_width *= 2
 
-    cap_out = cv2.VideoWriter(f"{args.out_path}/test.mp4", cv2.VideoWriter_fourcc(*'mp4v'), video_fps, (out_width, out_height))
+    if not os.path.exists(args.out_path):
+        os.makedirs(args.out_path)
 
-    images_path = "results/images/"
-    images_files = os.listdir(images_path)
-    files = [f for f in images_files if os.path.isfile(os.path.join(images_path, f))]
-    total_count = len(files)
+    cap_out = cv2.VideoWriter(f"{args.out_path}/{args.input_path.split('/')[-1].split('.')[0]}.mp4", cv2.VideoWriter_fourcc(*'mp4v'), video_fps, (out_width, out_height))
     
-    for index in range(1, total_count):
-        file_name = f"{index:05}.png"
-        print(file_name)
-        model_index = (index - 1) % total_model_count
+    index = -1
+    while True:
+        ret, image = cap.read()
+        index = index + 1
+        if not ret:
+            break
+
+        model_index = index % total_model_count
         model_name = str(model_index) + ".png"
 
-        image = cv2.imread(images_path + file_name)
         orig_image_height, orig_image_width, _ = image.shape
             
         model_image = cv2.imread(model_images_path + model_name)
@@ -171,9 +191,10 @@ if __name__ == '__main__':
                 rendered_img_orig = F.interpolate(rendered_img, (orig_image_height, orig_image_width), mode='bilinear').cpu()
 
             full_image = torch.Tensor(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)).permute(2,0,1).unsqueeze(0).float()/255.0
-            grid = torch.cat([full_image, rendered_img_orig], dim=3)
+            grid = torch.cat([full_image], dim=3)
         else:
-            grid = torch.cat([cropped_image, rendered_img], dim=3)
+            grid = torch.cat([cropped_image], dim=3)
+            
         
         if args.use_smirk_generator:
             if (kpt_mediapipe is None):
@@ -222,16 +243,34 @@ if __name__ == '__main__':
                 else:
                     reconstructed_img_orig = F.interpolate(reconstructed_img, (orig_image_height, orig_image_width), mode='bilinear').cpu()
 
-
                 grid = torch.cat([grid, reconstructed_img_orig], dim=3)
             else:
                 grid = torch.cat([grid, reconstructed_img], dim=3)
             
-        # np.save(jaw_path + file_path.replace(".png", ".npy"), jaw_params.detach().cpu().numpy())
+            reconstructed_img = reconstructed_img.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0
+            reconstructed_img = reconstructed_img.astype(np.uint8)
+            reconstructed_img = cv2.cvtColor(reconstructed_img, cv2.COLOR_BGR2RGB)
+            recontructed_mediapipe = run_mediapipe(reconstructed_img)
+            
+            np.save(f"{vertices_path}{(index + 1):05}.npy", flame_output['vertices'].detach().cpu().numpy())
+            
+            lipsUpperOuter = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291]
+            lipsLowerOuter = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291]
+            lipsIndexes = lipsUpperOuter + lipsLowerOuter
+            lips_vertices = recontructed_mediapipe[lipsIndexes]
+            mask = np.zeros(reconstructed_img.shape[:2], dtype=np.uint8)
+            lips_polygon = np.array(lips_vertices[:, :2], dtype=np.int32)
+            cv2.fillPoly(mask, [lips_polygon], 255)
+            lips_region = cv2.bitwise_and(reconstructed_img, reconstructed_img, mask=mask)
+            cv2.imwrite(f"{jaw_path}{(index + 1):05}.png", lips_region)
+            
         grid_numpy = grid.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0
         grid_numpy = grid_numpy.astype(np.uint8)
         grid_numpy = cv2.cvtColor(grid_numpy, cv2.COLOR_BGR2RGB)
         cap_out.write(grid_numpy)
+        
+    cap.release()
     cap_out.release()
+    
     print("finished!!!")
 
