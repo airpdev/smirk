@@ -66,14 +66,6 @@ if __name__ == '__main__':
     renderer = Renderer().to(args.device)
     
     image_size = 224
-
-    vertices_path = "results/vertices/"
-    if not os.path.exists(vertices_path):
-        os.makedirs(vertices_path)
-    
-    jaw_path = "results/jaws/"
-    if not os.path.exists(jaw_path):
-        os.makedirs(jaw_path)
         
     model_images_path = "samples/model_images/"
     model_images_files = os.listdir(model_images_path)
@@ -99,9 +91,9 @@ if __name__ == '__main__':
         out_height = image_size
         
     if args.use_smirk_generator:
-        out_width *= 2
+        out_width *= 1
     else:
-        out_width *= 2
+        out_width *= 1
 
     if not os.path.exists(args.out_path):
         os.makedirs(args.out_path)
@@ -191,9 +183,9 @@ if __name__ == '__main__':
                 rendered_img_orig = F.interpolate(rendered_img, (orig_image_height, orig_image_width), mode='bilinear').cpu()
 
             full_image = torch.Tensor(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)).permute(2,0,1).unsqueeze(0).float()/255.0
-            grid = torch.cat([full_image], dim=3)
-        else:
-            grid = torch.cat([cropped_image], dim=3)
+        #     grid = torch.cat([full_image], dim=3)
+        # else:
+        #     grid = torch.cat([cropped_image], dim=3)
             
         
         if args.use_smirk_generator:
@@ -242,32 +234,31 @@ if __name__ == '__main__':
                     reconstructed_img_orig = torch.Tensor(reconstructed_img_orig).permute(2,0,1).unsqueeze(0).float()/255.0
                 else:
                     reconstructed_img_orig = F.interpolate(reconstructed_img, (orig_image_height, orig_image_width), mode='bilinear').cpu()
-
-                grid = torch.cat([grid, reconstructed_img_orig], dim=3)
-            else:
-                grid = torch.cat([grid, reconstructed_img], dim=3)
+            #     grid = torch.cat([grid, reconstructed_img_orig], dim=3)
+            # else:
+            #     grid = torch.cat([grid, reconstructed_img], dim=3)
             
             reconstructed_img = reconstructed_img.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0
             reconstructed_img = reconstructed_img.astype(np.uint8)
             reconstructed_img = cv2.cvtColor(reconstructed_img, cv2.COLOR_BGR2RGB)
             recontructed_mediapipe = run_mediapipe(reconstructed_img)
             
-            np.save(f"{vertices_path}{(index + 1):05}.npy", flame_output['vertices'].detach().cpu().numpy())
+            cropped_image = cropped_image.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0
+            cropped_image = cropped_image.astype(np.uint8)
+            cropped_image = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB)
             
-            lipsUpperOuter = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291]
-            lipsLowerOuter = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291]
-            lipsIndexes = lipsUpperOuter + lipsLowerOuter
-            lips_vertices = recontructed_mediapipe[lipsIndexes]
+            # np.save(f"{vertices_path}{(index + 1):05}.npy", flame_output['vertices'].detach().cpu().numpy())
+           
+            mouth_index = [0, 267, 391, 322, 410, 287, 422, 424, 418, 421, 200, 201, 194, 204, 202, 57, 186, 92, 165, 37, 0]
+            mouth_vertices = recontructed_mediapipe[mouth_index]
             mask = np.zeros(reconstructed_img.shape[:2], dtype=np.uint8)
-            lips_polygon = np.array(lips_vertices[:, :2], dtype=np.int32)
-            cv2.fillPoly(mask, [lips_polygon], 255)
-            lips_region = cv2.bitwise_and(reconstructed_img, reconstructed_img, mask=mask)
-            cv2.imwrite(f"{jaw_path}{(index + 1):05}.png", lips_region)
+            mouth_polygon = np.array(mouth_vertices[:, :2], dtype=np.int32)
+            cv2.fillPoly(mask, [mouth_polygon], 255)
+            mouth_region = cv2.bitwise_and(reconstructed_img, reconstructed_img, mask=mask)
             
-        grid_numpy = grid.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0
-        grid_numpy = grid_numpy.astype(np.uint8)
-        grid_numpy = cv2.cvtColor(grid_numpy, cv2.COLOR_BGR2RGB)
-        cap_out.write(grid_numpy)
+            cropped_image = cv2.bitwise_and(cropped_image, cropped_image, mask=(255 - mask))
+            cropped_image = cv2.add(mouth_region, cropped_image)
+        cap_out.write(cropped_image)
         
     cap.release()
     cap_out.release()
