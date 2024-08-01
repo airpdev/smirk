@@ -165,7 +165,7 @@ if __name__ == '__main__':
                 exit()
 
             mask_ratio_mul = 5
-            mask_ratio = 0.01
+            mask_ratio = 0.001
             mask_dilation_radius = 10
 
             hull_mask = create_mask(cropped_kpt_mediapipe, (224, 224))

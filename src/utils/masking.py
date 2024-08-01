@@ -15,21 +15,36 @@ def load_probabilities_per_FLAME_triangle():
     """
     flame_masks_triangles = np.load('assets/FLAME_masks/FLAME_masks_triangles.npy', allow_pickle=True).item()
 
+    # area_weights = {
+    #     'neck': 0.0,
+    #     'right_eyeball': 0.0,
+    #     'right_ear': 0.0,
+    #     'lips': 0.5,
+    #     'nose': 0.5,
+    #     'left_ear': 0.0,
+    #     'eye_region': 1.0,
+    #     'forehead':1.0, 
+    #     'left_eye_region': 0.0, 
+    #     'right_eye_region': 1.0, 
+    #     'face_clean': 1.0,
+    #     'cleaner_lips': 1.0
+    # }
+
     area_weights = {
         'neck': 0.0,
         'right_eyeball': 0.0,
         'right_ear': 0.0,
-        'lips': 0.5,
-        'nose': 0.5,
+        'lips': 1.0,
+        'nose': 0.0,
         'left_ear': 0.0,
-        'eye_region': 1.0,
-        'forehead':1.0, 
-        'left_eye_region': 1.0, 
-        'right_eye_region': 1.0, 
+        'eye_region': 0.0,
+        'forehead':0.0, 
+        'left_eye_region': 0.0, 
+        'right_eye_region': 0.0, 
         'face_clean': 1.0,
         'cleaner_lips': 1.0
     }
-
+ 
     face_probabilities = torch.zeros(9976)
 
     for area in area_weights.keys():

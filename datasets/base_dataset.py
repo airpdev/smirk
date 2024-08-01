@@ -25,7 +25,6 @@ mediapipe_indices = [276, 282, 283, 285, 293, 295, 296, 300, 334, 336,  46,  52,
        308, 310, 311, 312, 314, 317, 318, 321, 324, 375, 402, 405, 409,
        415]
 
-
 class BaseDataset(torch.utils.data.Dataset):
     def __init__(self, data_list, config, test=False):
         self.data_list = data_list

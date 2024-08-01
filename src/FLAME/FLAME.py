@@ -270,10 +270,16 @@ class FLAME(nn.Module):
         if neck_pose_params is None:
             neck_pose_params = self.neck_pose.expand(batch_size, -1)
             
-
+        # print("jaw_params", jaw_params)
         betas = torch.cat([shape_params, expression_params], dim=1)
+        # jaw_params = torch.tensor(torch.tensor([[0, 0, 0]], device='cuda:0'))
         full_pose = torch.cat([pose_params, neck_pose_params, jaw_params, eye_pose_params], dim=1)
 
+        # print("shape_params", shape_params)
+        # print("expression_params", expression_params)
+        # print("full_pose", full_pose)
+        
+        
         template_vertices = self.v_template.unsqueeze(0).expand(batch_size, -1, -1)
 
         vertices, _ = lbs(betas, full_pose, template_vertices,

@@ -12,7 +12,6 @@ from utils.mediapipe_utils import run_mediapipe
 from datasets.base_dataset import create_mask
 import torch.nn.functional as F
 
-
 def crop_face(frame, landmarks, scale=1.0, image_size=224):
     left = np.min(landmarks[:, 0])
     right = np.max(landmarks[:, 0])
@@ -32,6 +31,21 @@ def crop_face(frame, landmarks, scale=1.0, image_size=224):
     tform = estimate_transform('similarity', src_pts, DST_PTS)
 
     return tform
+
+def extract_polygon_region(image, polygon):
+    mask = np.zeros(image.shape[:2], dtype=np.uint8)
+    points = np.array([polygon], dtype=np.int32)
+    cv2.fillPoly(mask, points, 255)
+    masked_image = cv2.bitwise_and(image, image, mask=mask)
+    return masked_image, mask
+
+def warp_polygon(src_image, src_polygon, dst_polygon, size):
+    src_pts = np.array(src_polygon, dtype=np.float32)
+    dst_pts = np.array(dst_polygon, dtype=np.float32)
+    
+    h_matrix, _ = cv2.findHomography(src_pts, dst_pts)
+    warped_image = cv2.warpPerspective(src_image, h_matrix, size)
+    return warped_image
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -83,21 +97,12 @@ if __name__ == '__main__':
     video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
     # calculate size of output video
-    if args.render_orig:
-        out_width = video_width
-        out_height = video_height
-    else:
-        out_width = image_size
-        out_height = image_size
-        
-    if args.use_smirk_generator:
-        out_width *= 1
-    else:
-        out_width *= 1
+    out_width = video_width
+    out_height = video_height
 
     if not os.path.exists(args.out_path):
         os.makedirs(args.out_path)
-
+    
     cap_out = cv2.VideoWriter(f"{args.out_path}/{args.input_path.split('/')[-1].split('.')[0]}.mp4", cv2.VideoWriter_fourcc(*'mp4v'), video_fps, (out_width, out_height))
     
     index = -1
@@ -115,40 +120,33 @@ if __name__ == '__main__':
         model_image = cv2.imread(model_images_path + model_name)
         
         kpt_mediapipe = run_mediapipe(image)
-        if args.crop:
-            if (kpt_mediapipe is None):
+        if (kpt_mediapipe is None):
                 print('Could not find landmarks for the image using mediapipe and cannot crop the face. Exiting...')
                 exit()
             
-            kpt_mediapipe = kpt_mediapipe[..., :2]
+        kpt_mediapipe = kpt_mediapipe[..., :2]
 
-            tform = crop_face(image,kpt_mediapipe,scale=1.4,image_size=image_size)
-            
-            cropped_image = warp(image, tform.inverse, output_shape=(224, 224), preserve_range=True).astype(np.uint8)
+        tform = crop_face(image,kpt_mediapipe,scale=1.0,image_size=image_size)
+        
+        cropped_image = warp(image, tform.inverse, output_shape=(224, 224), preserve_range=True).astype(np.uint8)
 
-            cropped_kpt_mediapipe = np.dot(tform.params, np.hstack([kpt_mediapipe, np.ones([kpt_mediapipe.shape[0],1])]).T).T
-            cropped_kpt_mediapipe = cropped_kpt_mediapipe[:,:2]
-        else:
-            cropped_image = image
-            cropped_kpt_mediapipe = kpt_mediapipe
+        cropped_kpt_mediapipe = np.dot(tform.params, np.hstack([kpt_mediapipe, np.ones([kpt_mediapipe.shape[0],1])]).T).T
+        cropped_kpt_mediapipe = cropped_kpt_mediapipe[:,:2]
         
         model_kpt_mediapipe = run_mediapipe(model_image)
-        if args.crop:
-            if (model_kpt_mediapipe is None):
+        
+        if (model_kpt_mediapipe is None):
                 print('Could not find landmarks for the image using mediapipe and cannot crop the face. Exiting...')
                 exit()
             
-            model_kpt_mediapipe = model_kpt_mediapipe[..., :2]
+        model_kpt_mediapipe = model_kpt_mediapipe[..., :2]
 
-            tform = crop_face(model_image,model_kpt_mediapipe,scale=1.4,image_size=image_size)
-            
-            cropped_model_image = warp(model_image, tform.inverse, output_shape=(224, 224), preserve_range=True).astype(np.uint8)
+        tform = crop_face(model_image,model_kpt_mediapipe,scale=1.0,image_size=image_size)
+        
+        cropped_model_image = warp(model_image, tform.inverse, output_shape=(224, 224), preserve_range=True).astype(np.uint8)
 
-            cropped_model_kpt_mediapipe = np.dot(tform.params, np.hstack([model_kpt_mediapipe, np.ones([model_kpt_mediapipe.shape[0],1])]).T).T
-            cropped_model_kpt_mediapipe = cropped_model_kpt_mediapipe[:,:2]
-        else:
-            cropped_model_image = model_image
-            cropped_model_kpt_mediapipe = model_kpt_mediapipe
+        cropped_model_kpt_mediapipe = np.dot(tform.params, np.hstack([model_kpt_mediapipe, np.ones([model_kpt_mediapipe.shape[0],1])]).T).T
+        cropped_model_kpt_mediapipe = cropped_model_kpt_mediapipe[:,:2]
             
         
         cropped_image = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB)
@@ -173,21 +171,6 @@ if __name__ == '__main__':
     
         rendered_img = renderer_output['rendered_img']
         
-        if args.render_orig:
-            if args.crop:
-                rendered_img_numpy = (rendered_img.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0).astype(np.uint8)               
-                rendered_img_orig = warp(rendered_img_numpy, tform, output_shape=(orig_image_height, orig_image_width), preserve_range=True).astype(np.uint8)
-                # back to pytorch to concatenate with full_image
-                rendered_img_orig = torch.Tensor(rendered_img_orig).permute(2,0,1).unsqueeze(0).float()/255.0
-            else:
-                rendered_img_orig = F.interpolate(rendered_img, (orig_image_height, orig_image_width), mode='bilinear').cpu()
-
-            full_image = torch.Tensor(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)).permute(2,0,1).unsqueeze(0).float()/255.0
-        #     grid = torch.cat([full_image], dim=3)
-        # else:
-        #     grid = torch.cat([cropped_image], dim=3)
-            
-        
         if args.use_smirk_generator:
             if (kpt_mediapipe is None):
                 print('Could not find landmarks for the image using mediapipe and cannot create the hull mask for the smirk generator. Exiting...')
@@ -196,7 +179,7 @@ if __name__ == '__main__':
             mask_ratio_mul = 5
             mask_ratio = 0.001
             mask_dilation_radius = 10
-        
+            
             hull_mask = create_mask(cropped_kpt_mediapipe, (224, 224))
 
             face_probabilities = masking_utils.load_probabilities_per_FLAME_triangle()  
@@ -225,40 +208,39 @@ if __name__ == '__main__':
             smirk_generator_input = torch.cat([rendered_img, masked_img], dim=1)
 
             reconstructed_img = smirk_generator(smirk_generator_input)
-
-            if args.render_orig:
-                if args.crop:
-                    reconstructed_img_numpy = (reconstructed_img.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0).astype(np.uint8)               
-                    reconstructed_img_orig = warp(reconstructed_img_numpy, tform, output_shape=(orig_image_height, orig_image_width), preserve_range=True).astype(np.uint8)
-                    # back to pytorch to concatenate with full_image
-                    reconstructed_img_orig = torch.Tensor(reconstructed_img_orig).permute(2,0,1).unsqueeze(0).float()/255.0
-                else:
-                    reconstructed_img_orig = F.interpolate(reconstructed_img, (orig_image_height, orig_image_width), mode='bilinear').cpu()
-            #     grid = torch.cat([grid, reconstructed_img_orig], dim=3)
-            # else:
-            #     grid = torch.cat([grid, reconstructed_img], dim=3)
-            
             reconstructed_img = reconstructed_img.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0
             reconstructed_img = reconstructed_img.astype(np.uint8)
             reconstructed_img = cv2.cvtColor(reconstructed_img, cv2.COLOR_BGR2RGB)
             recontructed_mediapipe = run_mediapipe(reconstructed_img)
             
-            cropped_image = cropped_image.squeeze(0).permute(1,2,0).detach().cpu().numpy()*255.0
-            cropped_image = cropped_image.astype(np.uint8)
-            cropped_image = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB)
-            
+            try:
+                smoothed_frame = 0.5 * reconstructed_img.astype(np.float32) + 0.5 * smoothed_frame
+            except:
+                smoothed_frame = reconstructed_img.astype(np.float32)
+                
+            # vertices_path = "results/vertices/"
             # np.save(f"{vertices_path}{(index + 1):05}.npy", flame_output['vertices'].detach().cpu().numpy())
            
             mouth_index = [0, 267, 391, 322, 410, 287, 422, 424, 418, 421, 200, 201, 194, 204, 202, 57, 186, 92, 165, 37, 0]
             mouth_vertices = recontructed_mediapipe[mouth_index]
-            mask = np.zeros(reconstructed_img.shape[:2], dtype=np.uint8)
             mouth_polygon = np.array(mouth_vertices[:, :2], dtype=np.int32)
-            cv2.fillPoly(mask, [mouth_polygon], 255)
-            mouth_region = cv2.bitwise_and(reconstructed_img, reconstructed_img, mask=mask)
             
-            cropped_image = cv2.bitwise_and(cropped_image, cropped_image, mask=(255 - mask))
-            cropped_image = cv2.add(mouth_region, cropped_image)
-        cap_out.write(cropped_image)
+            image_mouth_vertices = kpt_mediapipe[mouth_index]
+            image_mouth_polygon = np.array(image_mouth_vertices[:, :2], dtype=np.int32)
+            h_i, w_i, _ = image.shape
+            extracted_mouth, mouth_mask = extract_polygon_region(smoothed_frame, mouth_polygon)
+            warped_mouth = warp_polygon(extracted_mouth, mouth_polygon, image_mouth_polygon, (w_i, h_i))
+            warped_mask = warp_polygon(mouth_mask, mouth_polygon, image_mouth_polygon, (w_i, h_i))
+            inverse_warped_mask = cv2.bitwise_not(warped_mask)
+            masked_image = cv2.bitwise_and(image, image, mask=inverse_warped_mask)
+            if warped_mouth.dtype != masked_image.dtype:
+                warped_mouth = warped_mouth.astype(masked_image.dtype)
+
+            feathered_mask = cv2.GaussianBlur(warped_mask, (1, 1), 0)
+            center_point = tuple(np.mean(image_mouth_polygon, axis=0).astype(int))
+            # output_image = cv2.seamlessClone(warped_mouth, image, feathered_mask, center_point, cv2.NORMAL_CLONE)
+            output_image = cv2.add(warped_mouth, masked_image)
+        cap_out.write(output_image.astype(np.uint8))
         
     cap.release()
     cap_out.release()

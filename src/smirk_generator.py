@@ -49,8 +49,8 @@ class SmirkGenerator(nn.Module):
         )
 
     def forward(self, x):
-
-        #if use_mask:
+        
+        # if use_mask:
         #    mask = (x[:, 3:] == 0).all(dim=1, keepdim=True).float()
 
         enc1 = self.encoder1(x)

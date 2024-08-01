@@ -67,9 +67,9 @@ dataset:
   MEAD_fan_landmarks_path: /gpu-data4/filby/MEAD_preprocessed/MEAD_front/fan_landmarks_hhj1897
   MEAD_mediapipe_landmarks_path: /gpu-data4/filby/MEAD_preprocessed/MEAD_front/mediapipe_landmarks
 
-  FFHQ_path: /gpu-data4/filby/FFHQ256/ffhq256
-  FFHQ_fan_landmarks_path: /gpu-data4/filby/FFHQ256/fan_landmarks_hhj1897
-  FFHQ_mediapipe_landmarks_path: /gpu-data4/filby/FFHQ256/mediapipe_landmarks
+  FFHQ_path: /gpu-data4/FFHQ256/ffhq256
+  FFHQ_fan_landmarks_path: /gpu-data4/FFHQ256/fan_landmarks_hhj1897
+  FFHQ_mediapipe_landmarks_path: /gpu-data4/FFHQ256/mediapipe_landmarks
 
   CelebA_path: /gpu-data4/filby/CelebA/img_align_celeba
   CelebA_fan_landmarks_path: /gpu-data4/filby/CelebA/fan_landmarks_hhj1897

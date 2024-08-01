@@ -11,6 +11,7 @@ import src.utils.masking as masking_utils
 from utils.mediapipe_utils import run_mediapipe
 from datasets.base_dataset import create_mask
 import torch.nn.functional as F
+from skimage.io import imread
 
 
 def crop_face(frame, landmarks, scale=1.0, image_size=224):
@@ -106,7 +107,6 @@ if __name__ == '__main__':
 
     outputs = smirk_encoder(cropped_image)
 
-
     flame_output = flame.forward(outputs)
     renderer_output = renderer.forward(flame_output['vertices'], outputs['cam'],
                                         landmarks_fan=flame_output['landmarks_fan'], landmarks_mp=flame_output['landmarks_mp'])
@@ -136,16 +136,17 @@ if __name__ == '__main__':
             exit()
 
         mask_ratio_mul = 5
-        mask_ratio = 0.01
+        mask_ratio = 0.001
         mask_dilation_radius = 10
-
+    
         hull_mask = create_mask(cropped_kpt_mediapipe, (224, 224))
 
         face_probabilities = masking_utils.load_probabilities_per_FLAME_triangle()  
 
         rendered_mask = 1 - (rendered_img == 0).all(dim=1, keepdim=True).float()
-        tmask_ratio = mask_ratio * mask_ratio_mul # upper bound on the number of points to sample
         
+        tmask_ratio = mask_ratio * mask_ratio_mul # upper bound on the number of points to sample
+    
         npoints, _ = masking_utils.mesh_based_mask_uniform_faces(renderer_output['transformed_vertices'], # sample uniformly from the mesh
                                                                 flame_faces=flame.faces_tensor,
                                                                 face_probabilities=face_probabilities,
@@ -163,7 +164,7 @@ if __name__ == '__main__':
 
         extra_points = cropped_image * pmask
         masked_img = masking_utils.masking(cropped_image, hull_mask, extra_points, mask_dilation_radius, rendered_mask=rendered_mask)
-
+        grid = torch.cat([grid, masked_img], dim=3)
         smirk_generator_input = torch.cat([rendered_img, masked_img], dim=1)
 
         reconstructed_img = smirk_generator(smirk_generator_input)
@@ -176,6 +177,7 @@ if __name__ == '__main__':
                 reconstructed_img_orig = torch.Tensor(reconstructed_img_orig).permute(2,0,1).unsqueeze(0).float()/255.0
             else:
                 reconstructed_img_orig = F.interpolate(reconstructed_img, (orig_image_height, orig_image_width), mode='bilinear').cpu()
+
 
             grid = torch.cat([grid, reconstructed_img_orig], dim=3)
         else:
